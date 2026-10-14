@@ -71,3 +71,43 @@ export const poolRoleForNode = (node: NodeKind, pools: MachineConfigPoolKind[]):
 /** Distinct pool roles among a set of nodes — the pools a TDX rollout will reboot. */
 export const rolesForNodes = (nodes: NodeKind[], pools: MachineConfigPoolKind[]): string[] =>
   [...new Set(nodes.map((n) => poolRoleForNode(n, pools)))].sort((a, b) => a.localeCompare(b));
+
+// ---------------------------------------------------------------------------
+// IOMMU enablement for confidential GPU (NVIDIA H100, bare metal only).
+//
+// Confidential GPU workloads require IOMMU passthrough for the GPU device. The
+// kernel argument depends on the CPU vendor: `intel_iommu=on` for Intel,
+// `amd_iommu=on` for AMD. Like the TDX host MachineConfig, this triggers a
+// rolling reboot of the target MachineConfigPool.
+// ---------------------------------------------------------------------------
+
+export const IOMMU_INTEL_KERNEL_ARG = 'intel_iommu=on';
+export const IOMMU_AMD_KERNEL_ARG = 'amd_iommu=on';
+export const IOMMU_PASSTHROUGH_ARG = 'iommu=pt';
+
+export const iommuMachineConfigName = (role: string, vendor: 'intel' | 'amd'): string =>
+  `99-${role}-iommu-${vendor}`;
+
+export const hasIommuArgs = (kernelArguments?: string[]): boolean =>
+  (kernelArguments ?? []).some(
+    (a) => a === IOMMU_INTEL_KERNEL_ARG || a === IOMMU_AMD_KERNEL_ARG,
+  );
+
+export const buildIommuMachineConfig = (
+  role: string,
+  vendor: 'intel' | 'amd',
+): K8sResourceCommon =>
+  ({
+    apiVersion: 'machineconfiguration.openshift.io/v1',
+    kind: 'MachineConfig',
+    metadata: {
+      name: iommuMachineConfigName(role, vendor),
+      labels: { 'machineconfiguration.openshift.io/role': role },
+    },
+    spec: {
+      kernelArguments: [
+        vendor === 'intel' ? IOMMU_INTEL_KERNEL_ARG : IOMMU_AMD_KERNEL_ARG,
+        IOMMU_PASSTHROUGH_ARG,
+      ],
+    },
+  }) as K8sResourceCommon;

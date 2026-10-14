@@ -39,6 +39,8 @@ import { useTranslation } from 'react-i18next';
 import { useConfidentialWorkloads } from '../k8s/hooks';
 import { ConfigMapGVK, DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';
 import type { CcWorkload, ConfigMapKind } from '../k8s/types';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanDeleteDeployment, useCanDeletePod } from '../utils/rbac/useCocoPermissions';
 import { statusCategory, statusColor } from '../utils/status';
 import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
@@ -64,7 +66,8 @@ const SORTABLE_FIELDS: (keyof CcWorkload | null)[] = [
 const RowActions: FC<{
   w: CcWorkload;
   onDelete: (w: CcWorkload) => void;
-}> = ({ w, onDelete }) => {
+  canDelete: boolean;
+}> = ({ w, onDelete, canDelete }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [open, setOpen] = useState(false);
   return (
@@ -87,6 +90,7 @@ const RowActions: FC<{
     >
       <DropdownList>
         <DropdownItem
+          isDisabled={!canDelete}
           onClick={() => {
             onDelete(w);
           }}
@@ -129,6 +133,9 @@ const SkeletonTable: FC = () => {
 const ConfidentialWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const { workloads, loaded } = useConfidentialWorkloads();
+  const [canDeletePod, canDeletePodLoading] = useCanDeletePod('default');
+  const [canDeleteDeploy, canDeleteDeployLoading] = useCanDeleteDeployment('default');
+  const canDelete = !canDeletePodLoading && !canDeleteDeployLoading && canDeletePod && canDeleteDeploy;
 
   // Filters live in the URL so overview tiles and runtime-class links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -493,7 +500,7 @@ const ConfidentialWorkloadsList: FC = () => {
                       <Timestamp timestamp={w.creationTimestamp} />
                     </Td>
                     <Td isActionCell>
-                      <RowActions w={w} onDelete={setToDelete} />
+                      <RowActions w={w} onDelete={setToDelete} canDelete={canDelete} />
                     </Td>
                   </Tr>
                 );
@@ -521,9 +528,15 @@ const ConfidentialWorkloadsList: FC = () => {
                 namespace: toDelete.namespace,
               },
             )}
+            <PermissionHint allowed={canDelete} loading={canDeletePodLoading || canDeleteDeployLoading} />
           </ModalBody>
           <ModalFooter>
-            <Button variant="danger" onClick={() => void doDelete()} isLoading={deleting}>
+            <Button
+              variant="danger"
+              onClick={() => void doDelete()}
+              isLoading={deleting}
+              isDisabled={deleting || !canDelete}
+            >
               {t('Delete')}
             </Button>
             <Button

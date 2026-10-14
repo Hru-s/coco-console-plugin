@@ -17,6 +17,8 @@
     "i18n": "./i18n-scripts/build-i18n.sh && node ./i18n-scripts/set-english-defaults.js",
     "lint": "yarn eslint src --fix && stylelint 'src/**/*.css' --allow-empty-input --fix",
     "test": "jest",
+    "test-e2e": "playwright test --config integration-tests/playwright.config.ts",
+    "test-e2e-headless": "playwright test --config integration-tests/playwright.config.ts --project coco-e2e",
     "webpack": "node -r ts-node/register ./node_modules/.bin/webpack",
     "deploy": "./deploy.sh"
   },
@@ -29,6 +31,7 @@
     "@patternfly/react-core": "^6.4.3",
     "@patternfly/react-icons": "^6.4.0",
     "@patternfly/react-table": "^6.4.3",
+    "@playwright/test": "^1.52.0",
     "@swc/core": "^1.15.40",
     "@types/jest": "^30.0.0",
     "@types/node": "^22.0.0",

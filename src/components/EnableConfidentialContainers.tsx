@@ -31,6 +31,8 @@ import {
 } from '../k8s/resources';
 import type { TeeNode } from '../k8s/types';
 import { buildOscFeatureGatesConfigMap } from '../utils/featureGates';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanPatchFeatureGates } from '../utils/rbac/useCocoPermissions';
 import { SNP_LABEL, TDX_LABEL, teeLabel } from '../utils/tee';
 import './coco.css';
 
@@ -89,6 +91,7 @@ const buildSchedulingSnippet = (selected: TeeNode[], allTee: TeeNode[]): string 
  */
 export const EnableConfidentialContainers: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canPatch, canPatchLoading] = useCanPatchFeatureGates();
 
   // Watch the ConfigMap as a LIST, not by name. useK8sWatchResource never flips
   // `loaded` to true for a single *named* resource that does not exist yet, and
@@ -175,12 +178,13 @@ export const EnableConfidentialContainers: FC = () => {
 
   return (
     <>
+      <PermissionHint allowed={canPatch} loading={canPatchLoading} />
       <Button
         variant="secondary"
         onClick={() => {
           setOpen(true);
         }}
-        isDisabled={!loaded}
+        isDisabled={!loaded || canPatchLoading || !canPatch}
       >
         {t('Enable confidential containers')}
       </Button>
@@ -326,7 +330,7 @@ export const EnableConfidentialContainers: FC = () => {
               variant="primary"
               onClick={() => void onEnable()}
               isLoading={busy}
-              isDisabled={busy || !loaded}
+              isDisabled={busy || !loaded || canPatchLoading || !canPatch}
             >
               {t('Enable and reboot')}
             </Button>

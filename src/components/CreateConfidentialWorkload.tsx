@@ -69,6 +69,8 @@ import { isValidCdhResourcePath } from '../utils/cdhPath';
 import { fnv1aHex } from '../utils/checksum';
 import { inspectInitdata, isInClusterKbsHost, kbsHostFromUrl } from '../utils/topology';
 import type { InitdataInspection } from '../utils/topology';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
+import { useCanCreatePod } from '../utils/rbac/useCocoPermissions';
 import { NamespaceSelect } from './NamespaceSelect';
 import './coco.css';
 
@@ -137,6 +139,7 @@ const SIDECAR_SCRIPT = [
 const CreateConfidentialWorkload: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const navigate = useNavigate();
+  const [canCreatePod, canCreatePodLoading] = useCanCreatePod('default');
 
   const [kind, setKind] = useState<Kind>('Pod');
   const [name, setName] = useState('coco-workload');
@@ -1125,8 +1128,12 @@ const CreateConfidentialWorkload: FC = () => {
           <WizardStep
             name={t('Review')}
             id="cw-step-review"
-            footer={{ nextButtonText: t('Create'), isNextDisabled: busy || !valid }}
+            footer={{
+              nextButtonText: t('Create'),
+              isNextDisabled: busy || !valid || canCreatePodLoading || !canCreatePod,
+            }}
           >
+            <PermissionHint allowed={canCreatePod} loading={canCreatePodLoading} />
             {error && (
               <Alert
                 variant="danger"
