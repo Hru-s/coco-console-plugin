@@ -40,6 +40,7 @@ import { podDisplayStatus, podRestartCount, statusColor } from '../utils/status'
 import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
 import { WorkloadAttestationDetail } from './WorkloadAttestationDetail';
+import { WorkloadMetrics } from './WorkloadMetrics';
 import './coco.css';
 
 const YAMLFallback: FC<{ obj: unknown }> = ({ obj }) => (
@@ -163,6 +164,16 @@ const ConfidentialWorkloadDetail: FC = () => {
             <div className="coco-openshift-console-plugin__detail-tabs">
               {workload ? (
                 <WorkloadAttestationDetail w={workload} evidence={evidence} />
+              ) : (
+                <span className="coco-openshift-console-plugin__muted">{t('Loading…')}</span>
+              )}
+            </div>
+          </Tab>
+
+          <Tab eventKey="metrics" title={<TabTitleText>{t('Metrics')}</TabTitleText>}>
+            <div className="coco-openshift-console-plugin__detail-tabs">
+              {pod ? (
+                <WorkloadMetrics namespace={ns ?? ''} podName={name ?? ''} />
               ) : (
                 <span className="coco-openshift-console-plugin__muted">{t('Loading…')}</span>
               )}

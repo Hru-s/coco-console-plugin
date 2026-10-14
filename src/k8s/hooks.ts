@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import {
   CC_INIT_DATA_ANNOTATION,
   ConfigMapGVK,
+  InfrastructureGVK,
   KataConfigGVK,
   NodeGVK,
   OSC_FEATURE_GATES_CM,
@@ -15,6 +16,7 @@ import type {
   CcClass,
   CcWorkload,
   ConfigMapKind,
+  InfrastructureKind,
   KataConfigKind,
   NodeKind,
   PodKind,
@@ -83,6 +85,14 @@ export const useCvmPeerPods = (): boolean => {
     name: PEER_PODS_CM,
   });
   return cvmPeerPodsEnabled(peerPodsCm?.data);
+};
+
+export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
+  const [infra, loaded] = useK8sWatchResource<InfrastructureKind>({
+    groupVersionKind: InfrastructureGVK,
+    name: 'cluster',
+  });
+  return [infra?.status?.platform, loaded];
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {
