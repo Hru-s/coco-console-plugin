@@ -37,3 +37,11 @@ export const useCanDeletePod = (namespace: string) =>
 
 export const useCanDeleteDeployment = (namespace: string) =>
   useAccessReview({ ...asAccessReview(DeploymentModel, 'delete', namespace) });
+
+export const useCanCreateSubscription = (namespace: string) =>
+  useAccessReview({
+    group: 'operators.coreos.com',
+    resource: 'subscriptions',
+    namespace,
+    verb: 'create',
+  });

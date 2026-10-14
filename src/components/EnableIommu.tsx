@@ -24,6 +24,8 @@ import type { FC } from 'react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MachineConfigGVK, MachineConfigModel } from '../k8s/resources';
+import { useCanCreateMachineConfig } from '../utils/rbac/useCocoPermissions';
+import { PermissionHint } from '../utils/rbac/PermissionHint';
 import {
   buildIommuMachineConfig,
   hasIommuArgs,
@@ -42,6 +44,7 @@ const isAlreadyExists = (e: unknown): boolean =>
 
 export const EnableIommu: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+  const [canCreateMc, mcRbacLoading] = useCanCreateMachineConfig();
 
   const [mcs] = useK8sWatchResource<MachineConfigKind[]>({
     groupVersionKind: MachineConfigGVK,
@@ -186,13 +189,14 @@ export const EnableIommu: FC = () => {
                 {error}
               </Alert>
             )}
+            <PermissionHint allowed={canCreateMc} loading={mcRbacLoading} />
           </ModalBody>
           <ModalFooter>
             <Button
               variant="primary"
               onClick={() => void onCreate()}
               isLoading={busy}
-              isDisabled={busy || role.trim() === ''}
+              isDisabled={busy || role.trim() === '' || mcRbacLoading || !canCreateMc}
             >
               {t('Enable and reboot')}
             </Button>
