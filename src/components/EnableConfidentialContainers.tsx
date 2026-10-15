@@ -98,7 +98,7 @@ export const EnableConfidentialContainers: FC = () => {
   // enable button (isDisabled={!loaded}) permanently greyed out. A namespaced
   // list loads correctly (empty array when the CM is absent), the same pattern
   // EnableTdxHost uses for MachineConfigs.
-  const [cms, loaded] = useK8sWatchResource<ConfigMapKind[]>({
+  const [cms, loaded, loadError] = useK8sWatchResource<ConfigMapKind[]>({
     groupVersionKind: ConfigMapGVK,
     namespace: OSC_NAMESPACE,
     isList: true,
@@ -147,6 +147,10 @@ export const EnableConfidentialContainers: FC = () => {
   };
 
   const onEnable = async () => {
+    if (busy || !loaded || Boolean(loadError) || canWriteLoading || !canWrite || enabled) {
+      return;
+    }
+
     setBusy(true);
     setError(undefined);
     try {
@@ -194,14 +198,25 @@ export const EnableConfidentialContainers: FC = () => {
     <>
       <Button
         variant="primary"
-        onClick={() => setOpen(true)}
-        isDisabled={!loaded || cloudPeerPodsOnly}
+        onClick={() => {
+          setOpen(true);
+        }}
+        isDisabled={!loaded || Boolean(loadError) || cloudPeerPodsOnly}
       >
         {t('Enable confidential containers')}
       </Button>
+      {loadError && (
+        <Alert variant="danger" isInline title={t('Could not read feature-gate ConfigMaps')}>
+          {t(
+            'The ConfigMap state is unknown. Enabling confidential containers is blocked until it can be read.',
+          )}
+        </Alert>
+      )}
       <Modal
         isOpen={open}
-        onClose={() => setOpen(false)}
+        onClose={() => {
+          setOpen(false);
+        }}
         title={t('Enable confidential containers')}
         variant="large"
       >
@@ -217,7 +232,7 @@ export const EnableConfidentialContainers: FC = () => {
               {error}
             </Alert>
           )}
-          <PermissionHint allowed={canWrite} loading={canWriteLoading || !loaded} />
+          {!loadError && <PermissionHint allowed={canWrite} loading={canWriteLoading || !loaded} />}
 
           {!cloudPeerPodsOnly && teeNodes.length > 0 && (
             <>
@@ -262,12 +277,20 @@ export const EnableConfidentialContainers: FC = () => {
           )}
         </ModalBody>
         <ModalFooter>
-          <Button onClick={() => setOpen(false)}>{t('Cancel')}</Button>
+          <Button
+            onClick={() => {
+              setOpen(false);
+            }}
+          >
+            {t('Cancel')}
+          </Button>
           <Button
             variant="primary"
-            onClick={onEnable}
+            onClick={() => {
+              void onEnable();
+            }}
             isLoading={busy}
-            isDisabled={!canWrite || canWriteLoading || !loaded || busy}
+            isDisabled={busy || !loaded || Boolean(loadError) || canWriteLoading || !canWrite}
           >
             {t('Enable')}
           </Button>

@@ -87,6 +87,25 @@ export const useCvmPeerPods = (): boolean => {
   return cvmPeerPodsEnabled(peerPodsCm?.data);
 };
 
+export const useCvmPeerPodsStatus = (): [boolean, boolean] => {
+  const [peerPodsCm, loaded, error] = useK8sWatchResource<ConfigMapKind>({
+    groupVersionKind: ConfigMapGVK,
+    namespace: OSC_NAMESPACE,
+    name: PEER_PODS_CM,
+  });
+
+  const err = error as
+    | {
+        code?: number | string;
+        response?: { status?: number };
+      }
+    | undefined;
+
+  const notFound = Number(err?.code) === 404 || err?.response?.status === 404;
+
+  return [cvmPeerPodsEnabled(peerPodsCm?.data), loaded || notFound];
+};
+
 export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
   const [infra, loaded] = useK8sWatchResource<InfrastructureKind>({
     groupVersionKind: InfrastructureGVK,

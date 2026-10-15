@@ -30,10 +30,20 @@ import {
   hasIommuArgs,
   hasTdxHostArgs,
   iommuMachineConfigName,
+  isIommuConfiguredForRole,
   IOMMU_INTEL_KERNEL_ARG,
   IOMMU_AMD_KERNEL_ARG,
   IOMMU_PASSTHROUGH_ARG,
 } from './machineConfig';
+import {
+  buildCpuQuery,
+  buildMemoryQuery,
+  buildNetworkReceiveQuery,
+  buildNetworkTransmitQuery,
+  buildFilesystemReadQuery,
+  buildFilesystemWriteQuery,
+} from './workloadMetricsQueries';
+import { shouldShowBaremetalBanner } from './baremetal';
 import { teeTypeForNode, gpuCcReady, teeLabel, sgxCapable, sgxDevicePluginReady } from './tee';
 import { parseEvidence, type EvidenceRecord } from './evidence';
 import { classForRuntimeClass, isConfidentialClass, ccClassLabel } from './runtime';
@@ -131,6 +141,19 @@ describe('Gap 2 – Infrastructure platform detection', () => {
     for (const p of unsupportedPlatforms) {
       expect(p === 'BareMetal' || p === 'None').toBe(false);
     }
+  });
+
+  it.each([
+    ['AWS', true, false, true],
+    ['Azure', true, false, true],
+    ['GCP', true, false, true],
+    ['BareMetal', true, false, false],
+    ['None', true, false, false],
+    ['AWS', true, true, false],
+    ['AWS', false, false, false],
+    [undefined, true, false, false],
+  ])('evaluates banner for platform=%s loaded=%s peers=%s', (platform, loaded, peers, expected) => {
+    expect(shouldShowBaremetalBanner(platform, loaded, peers)).toBe(expected);
   });
 });
 
@@ -348,9 +371,13 @@ describe('Gap 5 – Evidence parsing and runtime classification', () => {
       }),
     );
     expect(evidence).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(evidence!.workload?.name).toBe('test-pod');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(evidence!.source).toBe('sidecar');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(evidence!.verdict).toBe('passed');
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(evidence!.trustee?.kbsEndpoint).toBe('http://kbs:8080');
   });
 
@@ -397,43 +424,112 @@ describe('Gap 5 – Evidence parsing and runtime classification', () => {
 // ---------------------------------------------------------------------------
 // Gap 6: Workload metrics (query construction)
 // ---------------------------------------------------------------------------
-describe('Gap 6 – Prometheus query construction', () => {
-  const ns = 'cc-workloads';
+describe('IOMMU pool and vendor detection', () => {
+  const configs = [
+    {
+      metadata: {
+        labels: {
+          'machineconfiguration.openshift.io/role': 'master',
+        },
+      },
+      spec: {
+        kernelArguments: [IOMMU_INTEL_KERNEL_ARG, IOMMU_PASSTHROUGH_ARG],
+      },
+    },
+    {
+      metadata: {
+        labels: {
+          'machineconfiguration.openshift.io/role': 'worker',
+        },
+      },
+      spec: {
+        kernelArguments: [IOMMU_AMD_KERNEL_ARG, IOMMU_PASSTHROUGH_ARG],
+      },
+    },
+  ];
+
+  it('matches correct role and vendor', () => {
+    expect(isIommuConfiguredForRole(configs, 'master', 'intel')).toBe(true);
+
+    expect(isIommuConfiguredForRole(configs, 'worker', 'amd')).toBe(true);
+  });
+
+  it('rejects wrong role or vendor', () => {
+    expect(isIommuConfiguredForRole(configs, 'worker', 'intel')).toBe(false);
+
+    expect(isIommuConfiguredForRole(configs, 'kata-oc', 'amd')).toBe(false);
+  });
+
+  it('requires iommu=pt', () => {
+    const incomplete = [
+      {
+        metadata: {
+          labels: {
+            'machineconfiguration.openshift.io/role': 'worker',
+          },
+        },
+        spec: {
+          kernelArguments: [IOMMU_INTEL_KERNEL_ARG],
+        },
+      },
+    ];
+
+    expect(isIommuConfiguredForRole(incomplete, 'worker', 'intel')).toBe(false);
+  });
+
+  it('handles missing spec safely', () => {
+    expect(
+      isIommuConfiguredForRole(
+        [
+          {
+            metadata: {
+              labels: {
+                'machineconfiguration.openshift.io/role': 'worker',
+              },
+            },
+          },
+        ],
+        'worker',
+        'intel',
+      ),
+    ).toBe(false);
+  });
+});
+
+describe('Gap 6 – Production Prometheus queries', () => {
+  const namespace = 'cc-workloads';
   const pod = 'my-pod';
-  const DURATION = '[5m]';
 
-  it('CPU usage query targets the correct pod and namespace', () => {
-    const q = `rate(container_cpu_usage_seconds_total{namespace="${ns}",pod="${pod}",container!="POD",container!=""}${DURATION})`;
-    expect(q).toContain(`namespace="${ns}"`);
-    expect(q).toContain(`pod="${pod}"`);
-    expect(q).toContain('container_cpu_usage_seconds_total');
-    expect(q).toContain('[5m]');
+  it('uses correct CPU query', () => {
+    expect(buildCpuQuery(namespace, pod)).toBe(
+      'sum(rate(container_cpu_usage_seconds_total{namespace="cc-workloads",pod="my-pod",container!="POD",container!=""}[5m]))',
+    );
   });
 
-  it('memory query is an instant vector (no rate)', () => {
-    const q = `container_memory_working_set_bytes{namespace="${ns}",pod="${pod}",container!="POD",container!=""}`;
-    expect(q).not.toContain('rate');
-    expect(q).toContain('container_memory_working_set_bytes');
+  it('uses correct memory query', () => {
+    expect(buildMemoryQuery(namespace, pod)).toBe(
+      'sum(container_memory_working_set_bytes{namespace="cc-workloads",pod="my-pod",container!="POD",container!=""})',
+    );
   });
 
-  it('network queries cover both rx and tx', () => {
-    const rx = `rate(container_network_receive_bytes_total{namespace="${ns}",pod="${pod}"}${DURATION})`;
-    const tx = `rate(container_network_transmit_bytes_total{namespace="${ns}",pod="${pod}"}${DURATION})`;
-    expect(rx).toContain('receive');
-    expect(tx).toContain('transmit');
+  it('uses correct network queries', () => {
+    expect(buildNetworkReceiveQuery(namespace, pod)).toBe(
+      'sum(rate(container_network_receive_bytes_total{namespace="cc-workloads",pod="my-pod"}[5m]))',
+    );
+
+    expect(buildNetworkTransmitQuery(namespace, pod)).toBe(
+      'sum(rate(container_network_transmit_bytes_total{namespace="cc-workloads",pod="my-pod"}[5m]))',
+    );
   });
 
-  it('filesystem queries cover reads and writes', () => {
-    const rd = `rate(container_fs_reads_bytes_total{namespace="${ns}",pod="${pod}",container!="POD",container!=""}${DURATION})`;
-    const wr = `rate(container_fs_writes_bytes_total{namespace="${ns}",pod="${pod}",container!="POD",container!=""}${DURATION})`;
-    expect(rd).toContain('fs_reads_bytes_total');
-    expect(wr).toContain('fs_writes_bytes_total');
-  });
+  it('uses correct filesystem queries', () => {
+    expect(buildFilesystemReadQuery(namespace, pod)).toBe(
+      'sum(rate(container_fs_reads_bytes_total{namespace="cc-workloads",pod="my-pod",container!="POD",container!=""}[5m]))',
+    );
 
-  it('queries exclude the POD infrastructure container', () => {
-    const q = `rate(container_cpu_usage_seconds_total{namespace="${ns}",pod="${pod}",container!="POD",container!=""}${DURATION})`;
-    expect(q).toContain('container!="POD"');
-    expect(q).toContain('container!=""');
+    expect(buildFilesystemWriteQuery(namespace, pod)).toBe(
+      'sum(rate(container_fs_writes_bytes_total{namespace="cc-workloads",pod="my-pod",container!="POD",container!=""}[5m]))',
+    );
   });
 });
 
@@ -492,7 +588,9 @@ describe('Gap 7 – Cross-gap integration checks', () => {
   it('evidence for an unknown workload does not crash parseEvidence', () => {
     const ev = parseEvidence(JSON.stringify({ source: 'sidecar', verdict: 'failed' }));
     expect(ev).toBeDefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(ev!.workload).toBeUndefined();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(ev!.verdict).toBe('failed');
   });
 });

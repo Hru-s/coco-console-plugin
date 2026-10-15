@@ -1,41 +1,15 @@
 import { Alert } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useCvmPeerPods, useInfrastructurePlatform } from '../k8s/hooks';
-
-/**
- * shouldShowBaremetalBanner — pure function that determines whether to show the banner.
- * Returns true only when:
- * - platform detection is complete
- * - platform is known (not undefined)
- * - platform is neither 'BareMetal' nor 'None'
- * - confidential VM peer pods are not enabled
- */
-export const shouldShowBaremetalBanner = (
-  platform: string | undefined,
-  loaded: boolean,
-  cvmPeerPods: boolean,
-): boolean => {
-  // Must have completed platform detection
-  if (!loaded) return false;
-  // Platform must be known
-  if (platform === undefined) return false;
-  // Must not be bare-metal (where on-node TEE is available)
-  if (platform === 'BareMetal') return false;
-  // Must not be None
-  if (platform === 'None') return false;
-  // Must not have CVM peer pods as an alternative
-  if (cvmPeerPods) return false;
-  // All checks passed: show the banner
-  return true;
-};
+import { useCvmPeerPodsStatus, useInfrastructurePlatform } from '../k8s/hooks';
+import { shouldShowBaremetalBanner } from '../utils/baremetal';
 
 const BaremetalBanner: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [platform, loaded] = useInfrastructurePlatform();
-  const cvmPeerPods = useCvmPeerPods();
+  const [cvmPeerPods, peerPodsSettled] = useCvmPeerPodsStatus();
 
-  if (!shouldShowBaremetalBanner(platform, loaded, cvmPeerPods)) {
+  if (!shouldShowBaremetalBanner(platform, loaded && peerPodsSettled, cvmPeerPods)) {
     return null;
   }
 
