@@ -44,9 +44,7 @@ const makeNode = (name: string, labels: Record<string, string> = {}, ready = tru
   status: { conditions: [{ type: 'Ready', status: ready ? 'True' : 'False' }] },
 });
 
-const makeKataConfig = (
-  overrides: Partial<KataConfigKind['status']> = {},
-): KataConfigKind => ({
+const makeKataConfig = (overrides: Partial<KataConfigKind['status']> = {}): KataConfigKind => ({
   metadata: { name: 'example-kataconfig' },
   status: {
     kataNodes: {

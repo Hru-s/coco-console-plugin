@@ -1,15 +1,15 @@
 import { PrometheusEndpoint, usePrometheusPoll } from '@openshift-console/dynamic-plugin-sdk';
-import {
-  Alert,
-  Card,
-  CardBody,
-  CardTitle,
-  Flex,
-  FlexItem,
-  Skeleton,
-} from '@patternfly/react-core';
+import { Alert, Card, CardBody, CardTitle, Flex, FlexItem, Skeleton } from '@patternfly/react-core';
 import type { FC } from 'react';
 import { useTranslation } from 'react-i18next';
+import {
+  buildCpuQuery,
+  buildMemoryQuery,
+  buildNetworkReceiveQuery,
+  buildNetworkTransmitQuery,
+  buildFilesystemReadQuery,
+  buildFilesystemWriteQuery,
+} from '../utils/workloadMetricsQueries';
 import './coco.css';
 
 interface Props {
@@ -17,27 +17,40 @@ interface Props {
   podName: string;
 }
 
-const DURATION = '[5m]';
-
 const MetricChart: FC<{ title: string; query: string; unit?: string }> = ({
   title,
   query,
   unit,
 }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const [result, , loading] = usePrometheusPoll({ query, endpoint: PrometheusEndpoint.QUERY });
+  const [result, loaded, error] = usePrometheusPoll({
+    query,
+    endpoint: PrometheusEndpoint.QUERY,
+  });
+
   const value = (result as { data?: { result?: { value?: [number, string] }[] } })?.data
     ?.result?.[0]?.value?.[1];
+
+  // Determine if the value is a valid finite number
+  const numValue = value !== undefined ? parseFloat(value) : undefined;
+  const isValidNumber = numValue !== undefined && Number.isFinite(numValue);
 
   return (
     <Card isCompact>
       <CardTitle>{title}</CardTitle>
       <CardBody>
-        {loading ? (
+        {error ? (
+          <Alert
+            variant="danger"
+            isInline
+            title={t('Error loading metric')}
+            className="coco-openshift-console-plugin__mb"
+          />
+        ) : !loaded ? (
           <Skeleton width="5rem" height="2rem" />
-        ) : value !== undefined ? (
+        ) : isValidNumber ? (
           <span className="coco-openshift-console-plugin__stat-value">
-            {typeof value === 'string' ? parseFloat(value).toFixed(2) : value}
+            {numValue.toFixed(2)}
             {unit ? ` ${unit}` : ''}
           </span>
         ) : (
@@ -50,12 +63,13 @@ const MetricChart: FC<{ title: string; query: string; unit?: string }> = ({
 
 export const WorkloadMetrics: FC<Props> = ({ namespace, podName }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
-  const cpuQuery = `rate(container_cpu_usage_seconds_total{namespace="${namespace}",pod="${podName}",container!="POD",container!=""}${DURATION})`;
-  const memQuery = `container_memory_working_set_bytes{namespace="${namespace}",pod="${podName}",container!="POD",container!=""}`;
-  const netRxQuery = `rate(container_network_receive_bytes_total{namespace="${namespace}",pod="${podName}"}${DURATION})`;
-  const netTxQuery = `rate(container_network_transmit_bytes_total{namespace="${namespace}",pod="${podName}"}${DURATION})`;
-  const fsReadQuery = `rate(container_fs_reads_bytes_total{namespace="${namespace}",pod="${podName}",container!="POD",container!=""}${DURATION})`;
-  const fsWriteQuery = `rate(container_fs_writes_bytes_total{namespace="${namespace}",pod="${podName}",container!="POD",container!=""}${DURATION})`;
+
+  const cpuQuery = buildCpuQuery(namespace, podName);
+  const memQuery = buildMemoryQuery(namespace, podName);
+  const netRxQuery = buildNetworkReceiveQuery(namespace, podName);
+  const netTxQuery = buildNetworkTransmitQuery(namespace, podName);
+  const fsReadQuery = buildFilesystemReadQuery(namespace, podName);
+  const fsWriteQuery = buildFilesystemWriteQuery(namespace, podName);
 
   return (
     <div>

@@ -40,7 +40,7 @@ import { useConfidentialWorkloads } from '../k8s/hooks';
 import { ConfigMapGVK, DeploymentModel, NamespaceGVK, PodModel } from '../k8s/resources';
 import type { CcWorkload, ConfigMapKind } from '../k8s/types';
 import { PermissionHint } from '../utils/rbac/PermissionHint';
-import { useCanDeleteDeployment, useCanDeletePod } from '../utils/rbac/useCocoPermissions';
+import { useCanDeleteWorkload } from '../utils/rbac/useCocoPermissions';
 import { statusCategory, statusColor } from '../utils/status';
 import { EVIDENCE_LABEL, parseEvidence, type EvidenceRecord } from '../utils/evidence';
 import { CcClassLabel } from './CcClassLabel';
@@ -66,8 +66,7 @@ const SORTABLE_FIELDS: (keyof CcWorkload | null)[] = [
 const RowActions: FC<{
   w: CcWorkload;
   onDelete: (w: CcWorkload) => void;
-  canDelete: boolean;
-}> = ({ w, onDelete, canDelete }) => {
+}> = ({ w, onDelete }) => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [open, setOpen] = useState(false);
   return (
@@ -90,9 +89,9 @@ const RowActions: FC<{
     >
       <DropdownList>
         <DropdownItem
-          isDisabled={!canDelete}
           onClick={() => {
             onDelete(w);
+            setOpen(false);
           }}
         >
           {t('Delete')}
@@ -133,9 +132,6 @@ const SkeletonTable: FC = () => {
 const ConfidentialWorkloadsList: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const { workloads, loaded } = useConfidentialWorkloads();
-  const [canDeletePod, canDeletePodLoading] = useCanDeletePod('default');
-  const [canDeleteDeploy, canDeleteDeployLoading] = useCanDeleteDeployment('default');
-  const canDelete = !canDeletePodLoading && !canDeleteDeployLoading && canDeletePod && canDeleteDeploy;
 
   // Filters live in the URL so overview tiles and runtime-class links can deep-link.
   const [searchParams, setSearchParams] = useSearchParams();
@@ -239,6 +235,13 @@ const ConfidentialWorkloadsList: FC = () => {
     return sortBy.direction === 'desc' ? sorted.reverse() : sorted;
   }, [workloads, text, ccFilter, nsFilter, statusFilter, rcFilter, sortBy]);
 
+  // Always call the hook, even if toDelete is undefined - hooks must be called unconditionally
+  const [canDelete, canDeleteLoading] = useCanDeleteWorkload(
+    toDelete?.kind as 'Pod' | 'Deployment',
+    toDelete?.namespace ?? '',
+    toDelete?.name ?? '',
+  );
+
   const doDelete = async () => {
     if (!toDelete) return;
     setDeleting(true);
@@ -251,6 +254,49 @@ const ConfidentialWorkloadsList: FC = () => {
     } finally {
       setDeleting(false);
     }
+  };
+
+  /**
+   * DeleteWorkloadConfirmation — modal for deleting a single workload with permission checks.
+   */
+  const DeleteWorkloadConfirmation: FC<{
+    workload: CcWorkload | undefined;
+    onClose: () => void;
+    onConfirm: () => Promise<void>;
+    isDeleting: boolean;
+    canDelete: boolean;
+    canDeleteLoading: boolean;
+  }> = ({ workload, onClose, onConfirm, isDeleting, canDelete, canDeleteLoading }) => {
+    const { t } = useTranslation('plugin__coco-openshift-console-plugin');
+
+    if (!workload) return null;
+
+    return (
+      <Modal isOpen variant="small" onClose={onClose}>
+        <ModalHeader title={t('Delete confidential workload?')} />
+        <ModalBody>
+          {t('Delete {{kind}} {{name}} in {{namespace}}? Its confidential VM will be torn down.', {
+            kind: workload.kind,
+            name: workload.name,
+            namespace: workload.namespace,
+          })}
+          <PermissionHint allowed={canDelete} loading={canDeleteLoading} />
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            variant="danger"
+            onClick={() => void onConfirm()}
+            isLoading={isDeleting}
+            isDisabled={isDeleting || canDeleteLoading || !canDelete}
+          >
+            {t('Delete')}
+          </Button>
+          <Button variant="link" onClick={onClose} isDisabled={isDeleting}>
+            {t('Cancel')}
+          </Button>
+        </ModalFooter>
+      </Modal>
+    );
   };
 
   const getSortParams = (columnIndex: number) => ({ sortBy, onSort, columnIndex });
@@ -500,7 +546,7 @@ const ConfidentialWorkloadsList: FC = () => {
                       <Timestamp timestamp={w.creationTimestamp} />
                     </Td>
                     <Td isActionCell>
-                      <RowActions w={w} onDelete={setToDelete} canDelete={canDelete} />
+                      <RowActions w={w} onDelete={setToDelete} />
                     </Td>
                   </Tr>
                 );
@@ -510,46 +556,14 @@ const ConfidentialWorkloadsList: FC = () => {
         )}
       </PageSection>
 
-      {toDelete && (
-        <Modal
-          isOpen
-          variant="small"
-          onClose={() => {
-            setToDelete(undefined);
-          }}
-        >
-          <ModalHeader title={t('Delete confidential workload?')} />
-          <ModalBody>
-            {t(
-              'Delete {{kind}} {{name}} in {{namespace}}? Its confidential VM will be torn down.',
-              {
-                kind: toDelete.kind,
-                name: toDelete.name,
-                namespace: toDelete.namespace,
-              },
-            )}
-            <PermissionHint allowed={canDelete} loading={canDeletePodLoading || canDeleteDeployLoading} />
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="danger"
-              onClick={() => void doDelete()}
-              isLoading={deleting}
-              isDisabled={deleting || !canDelete}
-            >
-              {t('Delete')}
-            </Button>
-            <Button
-              variant="link"
-              onClick={() => {
-                setToDelete(undefined);
-              }}
-            >
-              {t('Cancel')}
-            </Button>
-          </ModalFooter>
-        </Modal>
-      )}
+      <DeleteWorkloadConfirmation
+        workload={toDelete}
+        onClose={() => setToDelete(undefined)}
+        onConfirm={doDelete}
+        isDeleting={deleting}
+        canDelete={canDelete}
+        canDeleteLoading={canDeleteLoading}
+      />
     </>
   );
 };

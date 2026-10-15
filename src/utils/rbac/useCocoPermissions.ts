@@ -1,3 +1,4 @@
+import type { AccessReviewResourceAttributes } from '@openshift-console/dynamic-plugin-sdk';
 import { useAccessReview } from '@openshift-console/dynamic-plugin-sdk';
 import {
   ConfigMapModel,
@@ -8,11 +9,9 @@ import {
   PodModel,
   DeploymentModel,
   OSC_NAMESPACE,
+  OSC_FEATURE_GATES_CM,
 } from '../../k8s/resources';
 import { asAccessReview } from './asAccessReview';
-
-export const useCanPatchFeatureGates = () =>
-  useAccessReview({ ...asAccessReview(ConfigMapModel, 'patch', OSC_NAMESPACE) });
 
 export const useCanCreateKataConfig = () =>
   useAccessReview({ ...asAccessReview(KataConfigModel, 'create') });
@@ -26,17 +25,48 @@ export const useCanCreateNodeFeatureRule = () =>
 export const useCanCreateJob = (namespace: string) =>
   useAccessReview({ ...asAccessReview(JobModel, 'create', namespace) });
 
-export const useCanCreatePod = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(PodModel, 'create', namespace) });
+/**
+ * useCanCreateWorkload — check if the user can create a workload of a specific kind.
+ * For 'Pod', uses PodModel; for 'Deployment', uses DeploymentModel.
+ * Returns [allowed, loading].
+ */
+export const useCanCreateWorkload = (kind: 'Pod' | 'Deployment', namespace: string) => {
+  const model = kind === 'Deployment' ? DeploymentModel : PodModel;
+  return useAccessReview({ ...asAccessReview(model, 'create', namespace) });
+};
 
-export const useCanCreateDeployment = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(DeploymentModel, 'create', namespace) });
+/**
+ * useCanDeleteWorkload — check if the user can delete a workload of a specific kind.
+ * For 'Pod', uses PodModel; for 'Deployment', uses DeploymentModel.
+ * Returns [allowed, loading].
+ */
+export const useCanDeleteWorkload = (
+  kind: 'Pod' | 'Deployment',
+  namespace: string,
+  name: string,
+) => {
+  const model = kind === 'Deployment' ? DeploymentModel : PodModel;
+  const resourceAttrs: AccessReviewResourceAttributes = {
+    ...asAccessReview(model, 'delete', namespace),
+    name,
+  };
+  return useAccessReview(resourceAttrs);
+};
 
-export const useCanDeletePod = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(PodModel, 'delete', namespace) });
-
-export const useCanDeleteDeployment = (namespace: string) =>
-  useAccessReview({ ...asAccessReview(DeploymentModel, 'delete', namespace) });
+/**
+ * useCanWriteFeatureGates — check if the user can create or patch the feature gates ConfigMap.
+ * If the ConfigMap does not exist (exists=false), checks 'create' permission.
+ * If the ConfigMap exists (exists=true), checks 'patch' permission with the named resource.
+ * Returns [allowed, loading].
+ */
+export const useCanWriteFeatureGates = (exists: boolean) => {
+  const verb = exists ? 'patch' : 'create';
+  const resourceAttrs: AccessReviewResourceAttributes = {
+    ...asAccessReview(ConfigMapModel, verb, OSC_NAMESPACE),
+    ...(exists ? { name: OSC_FEATURE_GATES_CM } : {}),
+  };
+  return useAccessReview(resourceAttrs);
+};
 
 export const useCanCreateSubscription = (namespace: string) =>
   useAccessReview({

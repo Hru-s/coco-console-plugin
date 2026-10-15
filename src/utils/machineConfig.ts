@@ -89,14 +89,9 @@ export const iommuMachineConfigName = (role: string, vendor: 'intel' | 'amd'): s
   `99-${role}-iommu-${vendor}`;
 
 export const hasIommuArgs = (kernelArguments?: string[]): boolean =>
-  (kernelArguments ?? []).some(
-    (a) => a === IOMMU_INTEL_KERNEL_ARG || a === IOMMU_AMD_KERNEL_ARG,
-  );
+  (kernelArguments ?? []).some((a) => a === IOMMU_INTEL_KERNEL_ARG || a === IOMMU_AMD_KERNEL_ARG);
 
-export const buildIommuMachineConfig = (
-  role: string,
-  vendor: 'intel' | 'amd',
-): K8sResourceCommon =>
+export const buildIommuMachineConfig = (role: string, vendor: 'intel' | 'amd'): K8sResourceCommon =>
   ({
     apiVersion: 'machineconfiguration.openshift.io/v1',
     kind: 'MachineConfig',
@@ -111,3 +106,39 @@ export const buildIommuMachineConfig = (
       ],
     },
   }) as K8sResourceCommon;
+type MachineConfigResource = K8sResourceCommon & {
+  spec?: { kernelArguments?: string[] };
+};
+
+/**
+ * isIommuConfiguredForRole — check if IOMMU is properly configured for a specific role and vendor.
+ * Filters MachineConfigs by the given role, aggregates kernel arguments, and verifies:
+ * - For Intel: both intel_iommu=on and iommu=pt are present
+ * - For AMD: both amd_iommu=on and iommu=pt are present
+ * Returns false if the role/vendor combination has no configs, or if required arguments are missing.
+ */
+export const isIommuConfiguredForRole = (
+  configs: K8sResourceCommon[],
+  role: string,
+  vendor: 'intel' | 'amd',
+): boolean => {
+  if (!configs || configs.length === 0) return false;
+
+  // Filter MachineConfigs by the role label
+  const filtered = configs.filter(
+    (cfg) => cfg.metadata?.labels?.['machineconfiguration.openshift.io/role'] === role,
+  );
+
+  if (filtered.length === 0) return false;
+
+  // Aggregate kernel arguments from all matching configs
+  const allArgs = filtered.flatMap(
+    (cfg) => ((cfg as MachineConfigResource).spec!.kernelArguments as string[]) ?? [],
+  );
+
+  // Determine required arguments based on vendor
+  const vendorArg = vendor === 'intel' ? IOMMU_INTEL_KERNEL_ARG : IOMMU_AMD_KERNEL_ARG;
+
+  // Both vendor-specific and passthrough arguments are required
+  return allArgs.includes(vendorArg) && allArgs.includes(IOMMU_PASSTHROUGH_ARG);
+};

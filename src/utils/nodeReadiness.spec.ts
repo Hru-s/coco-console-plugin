@@ -54,10 +54,7 @@ const kataConfig = (overrides: Partial<KataConfigKind['status']> = {}): KataConf
   },
 });
 
-const pool = (
-  name: string,
-  extra: Partial<MachineConfigPoolKind> = {},
-): MachineConfigPoolKind => ({
+const pool = (name: string, extra: Partial<MachineConfigPoolKind> = {}): MachineConfigPoolKind => ({
   metadata: { name },
   ...extra,
 });

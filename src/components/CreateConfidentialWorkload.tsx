@@ -70,7 +70,7 @@ import { fnv1aHex } from '../utils/checksum';
 import { inspectInitdata, isInClusterKbsHost, kbsHostFromUrl } from '../utils/topology';
 import type { InitdataInspection } from '../utils/topology';
 import { PermissionHint } from '../utils/rbac/PermissionHint';
-import { useCanCreatePod } from '../utils/rbac/useCocoPermissions';
+import { useCanCreateWorkload } from '../utils/rbac/useCocoPermissions';
 import { NamespaceSelect } from './NamespaceSelect';
 import './coco.css';
 
@@ -139,7 +139,6 @@ const SIDECAR_SCRIPT = [
 const CreateConfidentialWorkload: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const navigate = useNavigate();
-  const [canCreatePod, canCreatePodLoading] = useCanCreatePod('default');
 
   const [kind, setKind] = useState<Kind>('Pod');
   const [name, setName] = useState('coco-workload');
@@ -214,6 +213,9 @@ const CreateConfidentialWorkload: FC = () => {
   );
   const nsTrimmed = namespace.trim();
   const namespaceExists = nsNames.includes(nsTrimmed);
+
+  // Dynamic permission check based on selected kind and namespace
+  const [canCreateWorkload, canCreateWorkloadLoading] = useCanCreateWorkload(kind, nsTrimmed);
 
   // --- Encrypted block volume (LUKS) wizard ---
   const [enc, setEnc] = useState(false);
@@ -349,7 +351,8 @@ const CreateConfidentialWorkload: FC = () => {
 
   // Light per-step Next gating, derived from the existing state above. These only
   // block forward navigation; the final Create stays gated by the combined `valid`.
-  const generalStepValid = name.trim() !== '' && nsTrimmed !== '';
+  const generalStepValid =
+    name.trim() !== '' && nsTrimmed !== '' && canCreateWorkload && !canCreateWorkloadLoading;
   const imageStepValid = image.trim() !== '';
   const initdataStepValid = initdata.trim() !== '';
   // Storage step: if encryption is on, require the PVC name/size and a real LUKS
@@ -534,6 +537,11 @@ const CreateConfidentialWorkload: FC = () => {
   ].join('\n---\n');
 
   const create = async () => {
+    // Guard: check form validity and authorization
+    if (!name.trim() || !nsTrimmed || !canCreateWorkload || busy) {
+      return;
+    }
+
     setBusy(true);
     setError(undefined);
     try {
@@ -1130,10 +1138,10 @@ const CreateConfidentialWorkload: FC = () => {
             id="cw-step-review"
             footer={{
               nextButtonText: t('Create'),
-              isNextDisabled: busy || !valid || canCreatePodLoading || !canCreatePod,
+              isNextDisabled: busy || !valid || canCreateWorkloadLoading || !canCreateWorkload,
             }}
           >
-            <PermissionHint allowed={canCreatePod} loading={canCreatePodLoading} />
+            <PermissionHint allowed={canCreateWorkload} loading={canCreateWorkloadLoading} />
             {error && (
               <Alert
                 variant="danger"
