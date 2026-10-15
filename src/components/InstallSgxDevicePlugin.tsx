@@ -181,19 +181,19 @@ export const InstallSgxDevicePlugin: FC<Props> = ({ ready }) => {
     <div>
       {!crExists && (
         <>
-        <PermissionHint allowed={canCreateSub} loading={subRbacLoading} />
-        <Button
-          variant="secondary"
-          onClick={() => void onInstall()}
-          isLoading={inFlight}
-          isDisabled={inFlight || (started && !error) || subRbacLoading || !canCreateSub}
-        >
-          {error
-            ? t('Retry')
-            : crdReady
-              ? t('Create SGX device plugin')
-              : t('Install Intel SGX device plugin')}
-        </Button>
+          <PermissionHint allowed={canCreateSub} loading={subRbacLoading} />
+          <Button
+            variant="secondary"
+            onClick={() => void onInstall()}
+            isLoading={inFlight}
+            isDisabled={inFlight || (started && !error) || subRbacLoading || !canCreateSub}
+          >
+            {error
+              ? t('Retry')
+              : crdReady
+                ? t('Create SGX device plugin')
+                : t('Install Intel SGX device plugin')}
+          </Button>
         </>
       )}
       {status && !error && (

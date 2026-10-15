@@ -20,11 +20,7 @@ import {
   ToggleGroup,
   ToggleGroupItem,
 } from '@patternfly/react-core';
-import {
-  CheckCircleIcon,
-  ExclamationTriangleIcon,
-  InfoCircleIcon,
-} from '@patternfly/react-icons';
+import { CheckCircleIcon, ExclamationTriangleIcon, InfoCircleIcon } from '@patternfly/react-icons';
 import { Table, Tbody, Td, Th, Thead, Tr } from '@patternfly/react-table';
 import type { FC } from 'react';
 import { useMemo, useState } from 'react';

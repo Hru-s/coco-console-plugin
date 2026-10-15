@@ -92,7 +92,7 @@ export const useInfrastructurePlatform = (): [string | undefined, boolean] => {
     groupVersionKind: InfrastructureGVK,
     name: 'cluster',
   });
-  return [infra?.status?.platform, loaded];
+  return [infra?.status?.platformStatus?.type ?? infra?.status?.platform, loaded];
 };
 
 export const useNodes = (): [NodeKind[], boolean] => {
