@@ -70,7 +70,14 @@ import { fnv1aHex } from '../utils/checksum';
 import { inspectInitdata, isInClusterKbsHost, kbsHostFromUrl } from '../utils/topology';
 import type { InitdataInspection } from '../utils/topology';
 import { PermissionHint } from '../utils/rbac/PermissionHint';
-import { useCanCreateWorkload } from '../utils/rbac/useCocoPermissions';
+import {
+  useCanCreateWorkload,
+  useCanCreateNamespace,
+  useCanCreatePvc,
+  useCanCreateEvidenceServiceAccount,
+  useCanCreateEvidenceRole,
+  useCanCreateEvidenceRoleBinding,
+} from '../utils/rbac/useCocoPermissions';
 import { NamespaceSelect } from './NamespaceSelect';
 import './coco.css';
 
@@ -143,6 +150,7 @@ const CreateConfidentialWorkload: FC = () => {
   const [kind, setKind] = useState<Kind>('Pod');
   const [name, setName] = useState('coco-workload');
   const [namespace, setNamespace] = useState('default');
+  const [createNewNamespace, setCreateNewNamespace] = useState(false);
   const [image, setImage] = useState('registry.access.redhat.com/ubi9/ubi:latest');
   const [runtimeClass, setRuntimeClass] = useState<string>('kata-cc');
   const [replicas, setReplicas] = useState('1');
@@ -185,6 +193,8 @@ const CreateConfidentialWorkload: FC = () => {
   // available class.
   useEffect(() => {
     if (runtimeClassOptions.length && !runtimeClassOptions.includes(runtimeClass)) {
+      // Sync snap when the available RuntimeClass list changes (e.g. peer-pods topology).
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional option correction
       setRuntimeClass(runtimeClassOptions[0]);
     }
   }, [runtimeClassOptions, runtimeClass]);
@@ -214,8 +224,20 @@ const CreateConfidentialWorkload: FC = () => {
   const nsTrimmed = namespace.trim();
   const namespaceExists = nsNames.includes(nsTrimmed);
 
+  const shouldCreateNamespace = !namespaceExists && createNewNamespace;
+
   // Dynamic permission check based on selected kind and namespace
   const [canCreateWorkload, canCreateWorkloadLoading] = useCanCreateWorkload(kind, nsTrimmed);
+
+  const [canCreateNs, nsRbacLoading] = useCanCreateNamespace();
+
+  const [canCreatePvc, pvcRbacLoading] = useCanCreatePvc(nsTrimmed);
+
+  const [canCreateSa, saRbacLoading] = useCanCreateEvidenceServiceAccount(nsTrimmed);
+
+  const [canCreateRole, roleRbacLoading] = useCanCreateEvidenceRole(nsTrimmed);
+
+  const [canCreateRoleBinding, roleBindingRbacLoading] = useCanCreateEvidenceRoleBinding(nsTrimmed);
 
   // --- Encrypted block volume (LUKS) wizard ---
   const [enc, setEnc] = useState(false);
@@ -234,6 +256,29 @@ const CreateConfidentialWorkload: FC = () => {
   const [evidenceSidecar, setEvidenceSidecar] = useState(false);
   const [evidenceCdhPath, setEvidenceCdhPath] = useState('default/kbsres1/key1');
   const [evidenceInterval, setEvidenceInterval] = useState('60');
+
+  const requiredPermissions = [
+    {
+      allowed: canCreateWorkload,
+      loading: canCreateWorkloadLoading,
+    },
+    ...(shouldCreateNamespace ? [{ allowed: canCreateNs, loading: nsRbacLoading }] : []),
+    ...(enc ? [{ allowed: canCreatePvc, loading: pvcRbacLoading }] : []),
+    ...(evidenceSidecar
+      ? [
+          { allowed: canCreateSa, loading: saRbacLoading },
+          { allowed: canCreateRole, loading: roleRbacLoading },
+          {
+            allowed: canCreateRoleBinding,
+            loading: roleBindingRbacLoading,
+          },
+        ]
+      : []),
+  ];
+
+  const permissionsLoading = requiredPermissions.some((permission) => permission.loading);
+
+  const permissionsGranted = requiredPermissions.every((permission) => permission.allowed);
 
   // PodSecurity "restricted": the always-safe context fields are set unconditionally;
   // runAsNonRoot is opt-out because it blocks images that must run as root.
@@ -538,15 +583,15 @@ const CreateConfidentialWorkload: FC = () => {
 
   const create = async () => {
     // Guard: check form validity and authorization
-    if (!name.trim() || !nsTrimmed || !canCreateWorkload || busy) {
+    if (busy || !valid || permissionsLoading || !permissionsGranted) {
       return;
     }
 
     setBusy(true);
     setError(undefined);
     try {
-      // 1) Create the namespace first if the chosen one doesn't already exist.
-      if (!namespaceExists) {
+      // 1) Create the namespace first if the user opted in and it does not exist.
+      if (shouldCreateNamespace) {
         await k8sCreate({
           model: NamespaceModel,
           data: {
@@ -636,18 +681,36 @@ const CreateConfidentialWorkload: FC = () => {
                 <NamespaceSelect
                   id="cw-namespace"
                   value={namespace}
-                  onChange={setNamespace}
+                  onChange={(nextNamespace) => {
+                    if (nextNamespace !== namespace) {
+                      setCreateNewNamespace(false);
+                    }
+                    setNamespace(nextNamespace);
+                  }}
                   namespaces={nsNames}
                   creatable
                 />
                 {nsTrimmed !== '' && !namespaceExists && (
-                  <HelperText>
-                    <HelperTextItem variant="warning">
-                      {t('Namespace {{name}} does not exist yet and will be created.', {
-                        name: nsTrimmed,
-                      })}
-                    </HelperTextItem>
-                  </HelperText>
+                  <>
+                    <Checkbox
+                      id="cw-create-namespace"
+                      label={t('Create a new namespace')}
+                      isChecked={createNewNamespace}
+                      onChange={(_event, checked) => {
+                        setCreateNewNamespace(checked);
+                      }}
+                    />
+
+                    <HelperText>
+                      <HelperTextItem variant="warning">
+                        {createNewNamespace
+                          ? t('A new namespace will be created before the workload.')
+                          : t(
+                              'This namespace is not in your visible projects. It will be treated as an existing namespace.',
+                            )}
+                      </HelperTextItem>
+                    </HelperText>
+                  </>
                 )}
               </FormGroup>
               {kind === 'Deployment' && (
@@ -1138,10 +1201,10 @@ const CreateConfidentialWorkload: FC = () => {
             id="cw-step-review"
             footer={{
               nextButtonText: t('Create'),
-              isNextDisabled: busy || !valid || canCreateWorkloadLoading || !canCreateWorkload,
+              isNextDisabled: busy || !valid || permissionsLoading || !permissionsGranted,
             }}
           >
-            <PermissionHint allowed={canCreateWorkload} loading={canCreateWorkloadLoading} />
+            <PermissionHint allowed={permissionsGranted} loading={permissionsLoading} />
             {error && (
               <Alert
                 variant="danger"
@@ -1170,7 +1233,7 @@ const CreateConfidentialWorkload: FC = () => {
                         <DescriptionListTerm>{t('Namespace')}</DescriptionListTerm>
                         <DescriptionListDescription>
                           {nsTrimmed}
-                          {!namespaceExists && nsTrimmed !== '' ? ` (${t('to be created')})` : ''}
+                          {shouldCreateNamespace ? ` (${t('to be created')})` : ''}
                         </DescriptionListDescription>
                       </DescriptionListGroup>
                       {kind === 'Deployment' && (

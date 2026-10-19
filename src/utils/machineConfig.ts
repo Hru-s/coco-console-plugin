@@ -133,7 +133,7 @@ export const isIommuConfiguredForRole = (
 
   // Aggregate kernel arguments from all matching configs
   const allArgs = filtered.flatMap(
-    (cfg) => ((cfg as MachineConfigResource).spec!.kernelArguments as string[]) ?? [],
+    (cfg) => (cfg as MachineConfigResource).spec?.kernelArguments ?? [],
   );
 
   // Determine required arguments based on vendor
