@@ -43,7 +43,7 @@ export const EnableIommu: FC = () => {
   const { t } = useTranslation('plugin__coco-openshift-console-plugin');
   const [canCreateMc, mcRbacLoading] = useCanCreateMachineConfig();
 
-  const [mcs, mcsLoaded] = useK8sWatchResource<MachineConfigKind[]>({
+  const [mcs, mcsLoaded, mcsError] = useK8sWatchResource<MachineConfigKind[]>({
     groupVersionKind: MachineConfigGVK,
     isList: true,
   });
@@ -51,69 +51,55 @@ export const EnableIommu: FC = () => {
   const [vendor, setVendor] = useState<'intel' | 'amd'>('intel');
   const [role, setRole] = useState('worker');
 
+  const normalizedRole = role.trim();
+
+  const validRole =
+    normalizedRole.length > 0 &&
+    normalizedRole.length <= 63 &&
+    /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/.test(normalizedRole);
+
   // Check if IOMMU is already configured for the selected role and vendor
-  const applied = isIommuConfiguredForRole(mcs ?? [], role, vendor);
+  const applied = isIommuConfiguredForRole(mcs ?? [], normalizedRole, vendor);
 
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  const toCreate = buildIommuMachineConfig(role, vendor);
+  const toCreate = buildIommuMachineConfig(normalizedRole, vendor);
   const kernelArgs =
     vendor === 'intel'
       ? `${IOMMU_INTEL_KERNEL_ARG}  ${IOMMU_PASSTHROUGH_ARG}`
       : `${IOMMU_AMD_KERNEL_ARG}  ${IOMMU_PASSTHROUGH_ARG}`;
 
   const onCreate = async () => {
-    // Guard against invalid form and duplicate submission
-    if (!role.trim() || !canCreateMc || busy) {
+    if (
+      busy ||
+      !validRole ||
+      applied ||
+      !mcsLoaded ||
+      Boolean(mcsError) ||
+      mcRbacLoading ||
+      !canCreateMc
+    ) {
       return;
     }
 
     setBusy(true);
     setError(undefined);
+
     try {
-      await k8sCreate({ model: MachineConfigModel, data: toCreate });
+      await k8sCreate({
+        model: MachineConfigModel,
+        data: toCreate,
+      });
+
       setOpen(false);
     } catch (e) {
-      // Only suppress 409 if the configuration already exists; otherwise, show the error
-      const msg = e instanceof Error ? e.message : String(e);
-      if (/409|already exists|alreadyexists|conflict/i.test(msg)) {
-        // Verify that the existing config actually has the desired setup
-        const existing = (mcs ?? []).find(
-          (mc) =>
-            mc.metadata?.name === toCreate.metadata?.name ||
-            (mc.metadata?.labels?.['machineconfiguration.openshift.io/role'] === role &&
-              mc.spec?.kernelArguments?.some(
-                (arg) =>
-                  (vendor === 'intel' && arg === IOMMU_INTEL_KERNEL_ARG) ||
-                  (vendor === 'amd' && arg === IOMMU_AMD_KERNEL_ARG),
-              )),
-        );
-        if (!existing) {
-          setError(
-            t(
-              'A conflicting IOMMU MachineConfig already exists for this role. Remove it and try again.',
-            ),
-          );
-        } else {
-          setOpen(false);
-        }
-      } else {
-        setError(msg);
-      }
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
   };
-
-  if (applied) {
-    return (
-      <Label color="green" icon={<CheckCircleIcon />}>
-        {t('IOMMU enabled')}
-      </Label>
-    );
-  }
 
   return (
     <>
@@ -122,10 +108,11 @@ export const EnableIommu: FC = () => {
         onClick={() => {
           setOpen(true);
         }}
-        isDisabled={!mcsLoaded}
+        isDisabled={!mcsLoaded || Boolean(mcsError)}
       >
         {t('Enable IOMMU')}
       </Button>
+      {mcsError && <Alert variant="danger" isInline title={t('Unable to read MachineConfigs')} />}
       {open && (
         <Modal
           isOpen
@@ -184,6 +171,17 @@ export const EnableIommu: FC = () => {
               <FormGroup label={t('Kernel arguments')} fieldId="iommu-args">
                 <span className="coco-openshift-console-plugin__mono">{kernelArgs}</span>
               </FormGroup>
+              {mcsLoaded && validRole && applied && (
+                <Label color="green" icon={<CheckCircleIcon />}>
+                  {t('IOMMU already configured for this pool and CPU vendor')}
+                </Label>
+              )}
+
+              {mcsError && (
+                <Alert variant="danger" isInline title={t('Could not read MachineConfigs')}>
+                  {t('The current IOMMU configuration cannot be verified.')}
+                </Alert>
+              )}
             </Form>
 
             <Alert
@@ -224,7 +222,13 @@ export const EnableIommu: FC = () => {
               onClick={() => void onCreate()}
               isLoading={busy}
               isDisabled={
-                busy || role.trim() === '' || applied || mcRbacLoading || !mcsLoaded || !canCreateMc
+                busy ||
+                !validRole ||
+                applied ||
+                !mcsLoaded ||
+                Boolean(mcsError) ||
+                mcRbacLoading ||
+                !canCreateMc
               }
             >
               {t('Enable and reboot')}

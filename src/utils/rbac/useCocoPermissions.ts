@@ -8,6 +8,11 @@ import {
   JobModel,
   PodModel,
   DeploymentModel,
+  NamespaceModel,
+  PersistentVolumeClaimModel,
+  ServiceAccountModel,
+  RoleModel,
+  RoleBindingModel,
   OSC_NAMESPACE,
   OSC_FEATURE_GATES_CM,
 } from '../../k8s/resources';
@@ -75,3 +80,18 @@ export const useCanCreateSubscription = (namespace: string) =>
     namespace,
     verb: 'create',
   });
+
+export const useCanCreateNamespace = () =>
+  useAccessReview(asAccessReview(NamespaceModel, 'create'));
+
+export const useCanCreatePvc = (namespace: string) =>
+  useAccessReview(asAccessReview(PersistentVolumeClaimModel, 'create', namespace));
+
+export const useCanCreateEvidenceServiceAccount = (namespace: string) =>
+  useAccessReview(asAccessReview(ServiceAccountModel, 'create', namespace));
+
+export const useCanCreateEvidenceRole = (namespace: string) =>
+  useAccessReview(asAccessReview(RoleModel, 'create', namespace));
+
+export const useCanCreateEvidenceRoleBinding = (namespace: string) =>
+  useAccessReview(asAccessReview(RoleBindingModel, 'create', namespace));
