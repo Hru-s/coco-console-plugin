@@ -233,6 +233,30 @@ export const EnableConfidentialContainers: FC = () => {
           )}
           {!loadError && <PermissionHint allowed={canWrite} loading={canWriteLoading || !loaded} />}
 
+          {cloudPeerPodsOnly ? (
+            <Alert
+              variant="info"
+              isInline
+              title={t('No node reboot')}
+              className="coco-openshift-console-plugin__mb"
+            >
+              {t(
+                'The kata-remote runtime is already installed and does not reboot your nodes. To make peer pods confidential, set DISABLECVM to "false" and a confidential instance type (Standard_DC*as_v5 for AMD SEV-SNP or Standard_EC*eds_v5 for Intel TDX) in the peer pods config map.',
+              )}
+            </Alert>
+          ) : (
+            <Alert
+              variant="warning"
+              isInline
+              title={t('Nodes will reboot')}
+              className="coco-openshift-console-plugin__mb"
+            >
+              {t(
+                'Installing the kata-cc runtime reconfigures and reboots the sandboxed-containers nodes, one at a time.',
+              )}
+            </Alert>
+          )}
+
           {!cloudPeerPodsOnly && teeNodes.length > 0 && (
             <>
               <ExpandableSection
@@ -291,7 +315,7 @@ export const EnableConfidentialContainers: FC = () => {
             isLoading={busy}
             isDisabled={busy || !lookupReady || canWriteLoading || !canWrite}
           >
-            {t('Enable')}
+            {t('Enable and reboot')}
           </Button>
         </ModalFooter>
       </Modal>
