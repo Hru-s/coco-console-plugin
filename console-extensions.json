@@ -37,7 +37,7 @@
       "id": "confidential-containers",
       "perspective": "admin",
       "name": "%plugin__coco-openshift-console-plugin~Confidential Containers%",
-      "insertAfter": "sandboxes"
+      "insertAfter": ["sandboxes", "workloads"]
     },
     "flags": { "required": ["COCO_KATACONFIG"] }
   },
