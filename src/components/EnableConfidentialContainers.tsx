@@ -216,10 +216,9 @@ export const EnableConfidentialContainers: FC = () => {
         onClose={() => {
           setOpen(false);
         }}
-        title={t('Enable confidential containers')}
         variant="large"
       >
-        <ModalHeader />
+        <ModalHeader title={t('Enable confidential containers')} />
         <ModalBody>
           {error && (
             <Alert
@@ -287,7 +286,15 @@ export const EnableConfidentialContainers: FC = () => {
                       />
                     ))}
 
-                    <CodeBlock actions={[<CodeBlockAction onClick={copySnippet} key="copy" />]}>
+                    <CodeBlock
+                      actions={
+                        <CodeBlockAction>
+                          <Button variant="link" isInline onClick={copySnippet}>
+                            {copied ? t('Copied') : t('Copy')}
+                          </Button>
+                        </CodeBlockAction>
+                      }
+                    >
                       <CodeBlockCode>{snippet}</CodeBlockCode>
                     </CodeBlock>
                     {copied && <Alert variant="success" title={t('Copied to clipboard')} />}
